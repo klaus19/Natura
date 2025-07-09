@@ -70,5 +70,16 @@ dependencies {
 
     implementation(libs.material.icons.extended)
 
+    // NEW: TensorFlow Lite dependencies
+    implementation(libs.tensorflow.lite)
+    implementation(libs.tensorflow.lite.support)
 
+    // NEW: ViewModel & State Management
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
+    // NEW: Coroutines (for async AI processing)
+    implementation(libs.kotlinx.coroutines.android)
 }
+
+
