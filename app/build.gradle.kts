@@ -67,4 +67,8 @@ dependencies {
     implementation(libs.tensorflow.lite.support)
 // Coroutines
     implementation(libs.kotlinx.coroutines.android)
+
+    implementation(libs.material.icons.extended)
+
+
 }
