@@ -1,8 +1,5 @@
 package com.buggy.natura.ui.screens
 
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,23 +15,44 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.buggy.natura.ui.components.ResultsPanel
 import com.buggy.natura.utils.CameraUtils
+import com.buggy.natura.viewmodels.CameraViewModel
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CameraScreen() {
-    var flashEnabled by remember { mutableStateOf(false) }
-    var isCameraReady by remember { mutableStateOf(false) }
-
+fun CameraScreen(
+    viewModel: CameraViewModel = viewModel()
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val uiState by viewModel.uiState
+
+    // Initialize classifier when screen starts
+    LaunchedEffect(Unit) {
+        viewModel.initializeClassifier(context)
+    }
 
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
         // Top App Bar
         TopAppBar(
-            title = { Text("NatureLens") },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("NatureLens")
+                    if (uiState.isAnalyzing) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 titleContentColor = MaterialTheme.colorScheme.onPrimary
@@ -54,42 +72,33 @@ fun CameraScreen() {
                         CameraUtils.setupCamera(
                             previewView = this,
                             lifecycleOwner = lifecycleOwner,
-                            flashEnabled = flashEnabled
+                            flashEnabled = uiState.isFlashEnabled
                         ) {
-                            isCameraReady = true
+                            // Camera ready callback - could trigger auto-analysis here
                         }
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
                 update = { previewView ->
-                    // Update camera when flash setting changes
-                    if (isCameraReady) {
-                        CameraUtils.updateFlash(previewView, flashEnabled)
-                    }
+                    CameraUtils.updateFlash(previewView, uiState.isFlashEnabled)
                 }
             )
 
-            // Camera Status Overlay
-            if (!isCameraReady) {
+            // Error Message
+            uiState.errorMessage?.let { error ->
                 Card(
                     modifier = Modifier
-                        .align(Alignment.Center)
+                        .align(Alignment.TopCenter)
                         .padding(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        containerColor = MaterialTheme.colorScheme.errorContainer
                     )
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Starting camera...")
-                    }
+                    Text(
+                        text = error,
+                        modifier = Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
                 }
             }
 
@@ -102,59 +111,45 @@ fun CameraScreen() {
             ) {
                 // Flash Toggle
                 FloatingActionButton(
-                    onClick = { flashEnabled = !flashEnabled },
-                    containerColor = MaterialTheme.colorScheme.secondary,
+                    onClick = { viewModel.toggleFlash() },
+                    containerColor = if (uiState.isFlashEnabled) {
+                        MaterialTheme.colorScheme.tertiary
+                    } else {
+                        MaterialTheme.colorScheme.secondary
+                    },
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Icon(
-                        imageVector = if (flashEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                        contentDescription = if (flashEnabled) "Turn off flash" else "Turn on flash"
+                        imageVector = if (uiState.isFlashEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                        contentDescription = if (uiState.isFlashEnabled) "Turn off flash" else "Turn on flash"
                     )
                 }
 
-                // Capture Button (for future use)
+                // Capture Button (Future: real camera capture)
                 FloatingActionButton(
                     onClick = {
-                        // TODO: Implement capture functionality in next phase
+                        // TODO: Implement real image capture and analysis
                     },
                     containerColor = MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Capture"
+                        contentDescription = "Capture and analyze"
                     )
                 }
             }
         }
 
-        // Placeholder for Results Panel (Phase 2)
-        Card(
+        // Results Panel
+        ResultsPanel(
+            results = uiState.classificationResults,
+            isAnalyzing = uiState.isAnalyzing,
+            isClassifierReady = uiState.isClassifierReady,
+            onTestClick = { viewModel.runManualTest(context) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(120.dp)
-                .padding(8.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "🌱",
-                        style = MaterialTheme.typography.headlineLarge
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Plant identification coming in Phase 2!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
+                .height(180.dp)
+        )
     }
 }
