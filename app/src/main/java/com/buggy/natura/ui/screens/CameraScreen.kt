@@ -51,6 +51,13 @@ fun CameraScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
+                    if (uiState.isRealTimeEnabled && uiState.isClassifierReady) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "🔴 LIVE",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -65,17 +72,22 @@ fun CameraScreen(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            // Camera Preview
+            // Camera Preview with Real-time Analysis
             AndroidView(
                 factory = { ctx ->
                     PreviewView(ctx).apply {
-                        CameraUtils.setupCamera(
+                        CameraUtils.setupCameraWithAnalysis(
                             previewView = this,
                             lifecycleOwner = lifecycleOwner,
-                            flashEnabled = uiState.isFlashEnabled
-                        ) {
-                            // Camera ready callback - could trigger auto-analysis here
-                        }
+                            flashEnabled = uiState.isFlashEnabled,
+                            onCameraReady = {
+                                // Camera is ready
+                            },
+                            onImageAnalyzed = { bitmap ->
+                                // This is called automatically for each frame!
+                                viewModel.processCameraFrame(bitmap)
+                            }
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -125,31 +137,33 @@ fun CameraScreen(
                     )
                 }
 
-                // Capture Button (Future: real camera capture)
+                // Capture & Analyze Button
                 FloatingActionButton(
                     onClick = {
-                        // TODO: Implement real image capture and analysis
+                        viewModel.captureAndAnalyze()
                     },
                     containerColor = MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Capture and analyze"
+                        contentDescription = "Capture and analyze now"
                     )
                 }
             }
         }
 
-        // Results Panel
+        // Results Panel with Real-time Controls
         ResultsPanel(
             results = uiState.classificationResults,
             isAnalyzing = uiState.isAnalyzing,
             isClassifierReady = uiState.isClassifierReady,
+            isRealTimeEnabled = uiState.isRealTimeEnabled,
             onTestClick = { viewModel.runManualTest(context) },
+            onToggleRealTime = { viewModel.toggleRealTimeAnalysis() },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(180.dp)
+                .height(200.dp)
         )
     }
 }

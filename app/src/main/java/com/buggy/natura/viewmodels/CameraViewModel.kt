@@ -9,11 +9,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.buggy.natura.data.models.ClassificationResult
 import com.buggy.natura.ml.ImageClassifier
+import com.buggy.natura.utils.AnalysisThrottler
 import kotlinx.coroutines.launch
 
+
 /**
- * ViewModel for Camera Screen
- * Manages AI classification state and camera interactions
+ * ViewModel for Camera Screen - Updated with real-time analysis
  */
 class CameraViewModel : ViewModel() {
 
@@ -21,10 +22,10 @@ class CameraViewModel : ViewModel() {
     val uiState: State<CameraUiState> = _uiState
 
     private var imageClassifier: ImageClassifier? = null
-    private var isProcessing = false
+    private var analysisThrottler: AnalysisThrottler? = null
 
     /**
-     * Initialize the AI classifier
+     * Initialize the AI classifier and analysis throttler
      */
     fun initializeClassifier(context: Context) {
         viewModelScope.launch {
@@ -34,9 +35,19 @@ class CameraViewModel : ViewModel() {
                 imageClassifier = ImageClassifier(context)
                 val initialized = imageClassifier?.initialize() ?: false
 
+                if (initialized) {
+                    // Setup throttler for real-time analysis
+                    analysisThrottler = AnalysisThrottler(
+                        intervalMs = 3000L // Analyze every 3 seconds
+                    ) { bitmap ->
+                        classifyImageInternal(bitmap)
+                    }
+                }
+
                 _uiState.value = _uiState.value.copy(
                     isInitializing = false,
-                    isClassifierReady = initialized
+                    isClassifierReady = initialized,
+                    isRealTimeEnabled = initialized
                 )
 
                 Log.d("CameraViewModel", "Classifier initialized: $initialized")
@@ -53,38 +64,71 @@ class CameraViewModel : ViewModel() {
     }
 
     /**
-     * Process an image for classification
+     * Process camera frame (called automatically from camera)
      */
-    fun classifyImage(bitmap: Bitmap) {
-        if (isProcessing || imageClassifier == null || !_uiState.value.isClassifierReady) {
+    fun processCameraFrame(bitmap: Bitmap) {
+        if (!_uiState.value.isRealTimeEnabled || !_uiState.value.isClassifierReady) {
             return
         }
 
+        // Submit to throttler for processing
+        analysisThrottler?.submitForAnalysis(bitmap)
+    }
+
+    /**
+     * Manual classification (for test button or capture button)
+     */
+    fun classifyImage(bitmap: Bitmap) {
         viewModelScope.launch {
-            try {
-                isProcessing = true
-                _uiState.value = _uiState.value.copy(isAnalyzing = true)
-
-                val results = imageClassifier?.classify(bitmap) ?: emptyList()
-
-                _uiState.value = _uiState.value.copy(
-                    isAnalyzing = false,
-                    classificationResults = results,
-                    lastAnalysisTime = System.currentTimeMillis()
-                )
-
-                Log.d("CameraViewModel", "Classification completed: ${results.size} results")
-
-            } catch (e: Exception) {
-                Log.e("CameraViewModel", "Classification failed", e)
-                _uiState.value = _uiState.value.copy(
-                    isAnalyzing = false,
-                    errorMessage = "Classification failed: ${e.message}"
-                )
-            } finally {
-                isProcessing = false
-            }
+            classifyImageInternal(bitmap)
         }
+    }
+
+    /**
+     * Internal classification method
+     */
+    private suspend fun classifyImageInternal(bitmap: Bitmap) {
+        try {
+            _uiState.value = _uiState.value.copy(isAnalyzing = true)
+
+            val results = imageClassifier?.classify(bitmap) ?: emptyList()
+
+            _uiState.value = _uiState.value.copy(
+                isAnalyzing = false,
+                classificationResults = results,
+                lastAnalysisTime = System.currentTimeMillis()
+            )
+
+            Log.d("CameraViewModel", "Classification completed: ${results.size} results")
+
+        } catch (e: Exception) {
+            Log.e("CameraViewModel", "Classification failed", e)
+            _uiState.value = _uiState.value.copy(
+                isAnalyzing = false,
+                errorMessage = "Classification failed: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * Toggle real-time analysis on/off
+     */
+    fun toggleRealTimeAnalysis() {
+        val newState = !_uiState.value.isRealTimeEnabled
+        _uiState.value = _uiState.value.copy(isRealTimeEnabled = newState)
+
+        if (!newState) {
+            analysisThrottler?.pause()
+        }
+
+        Log.d("CameraViewModel", "Real-time analysis: $newState")
+    }
+
+    /**
+     * Force immediate analysis (for capture button)
+     */
+    fun captureAndAnalyze() {
+        analysisThrottler?.forceAnalysis()
     }
 
     /**
@@ -109,9 +153,8 @@ class CameraViewModel : ViewModel() {
     fun runManualTest(context: Context) {
         viewModelScope.launch {
             try {
-                // Create a test bitmap
                 val testBitmap = createTestBitmap()
-                classifyImage(testBitmap)
+                classifyImageInternal(testBitmap)
             } catch (e: Exception) {
                 Log.e("CameraViewModel", "Manual test failed", e)
             }
@@ -126,19 +169,21 @@ class CameraViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
+        analysisThrottler?.cleanup()
         imageClassifier?.close()
         Log.d("CameraViewModel", "ViewModel cleared")
     }
 }
 
 /**
- * UI State for Camera Screen
+ * UI State for Camera Screen - Updated with real-time features
  */
 data class CameraUiState(
     val isInitializing: Boolean = false,
     val isClassifierReady: Boolean = false,
     val isAnalyzing: Boolean = false,
     val isFlashEnabled: Boolean = false,
+    val isRealTimeEnabled: Boolean = true, // NEW: Real-time toggle
     val classificationResults: List<ClassificationResult> = emptyList(),
     val lastAnalysisTime: Long = 0L,
     val errorMessage: String? = null
